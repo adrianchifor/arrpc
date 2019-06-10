@@ -36,7 +36,6 @@ class Server(object):
 
             if msg_unpacked:
                 logger.debug(f"Received message from {address}")
-                logger.debug(msg_unpacked)  # REMOVE
                 if self.auth_secret:
                     try:
                         msg_unpacked = verify_msg(msg_unpacked, self.auth_secret)
