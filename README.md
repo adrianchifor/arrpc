@@ -13,6 +13,7 @@ Features:
 - Retries and timeouts
 - Telemetry (coming soon)
 - Tracing (coming soon)
+- Automatic mTLS on Kubernetes (coming soon)
 
 ## Install
 ```
@@ -48,20 +49,20 @@ print(response)
 ### TCP over TLS
 #### Server
 ```python
-server = arrpc.Server("127.0.0.1", 8080, handler,
+server = arrpc.Server("127.0.0.1", 8443, handler,
                       tls_certfile="server.crt",
                       tls_keyfile="server.key")
 ```
 
 #### Client (known CA)
 ```python
-client = arrpc.Client("127.0.0.1", 8080,
+client = arrpc.Client("127.0.0.1", 8443,
                       tls_cafile="ca.crt")
 ```
 
 #### Client (self-signed)
 ```python
-client = arrpc.Client("127.0.0.1", 8080,
+client = arrpc.Client("127.0.0.1", 8443,
                       tls_cafile="server.crt",
                       tls_self_signed=True)
 ```
@@ -114,3 +115,5 @@ client = arrpc.Client("127.0.0.1", 8080, debug=True)
 ### Tracing (coming soon)
 
 [OpenTracing](https://github.com/opentracing/opentracing-python)
+
+### Automatic mTLS on Kubernetes (coming soon)

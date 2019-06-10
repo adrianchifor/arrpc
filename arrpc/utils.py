@@ -16,13 +16,13 @@ def recvall(socket, buffer_size: int = 4096):
     return data
 
 
-def sign_and_wrap_msg(msg_packed, auth_secret):
+def sign_and_wrap_msg(msg_packed, auth_secret: str):
     signature = hmac.new(auth_secret.encode("utf-8"), msg_packed, hashlib.sha256).hexdigest()
     signed_msg = {"arrpc.sign": signature, "data": msg_packed}
     return packb(signed_msg, use_bin_type=True)
 
 
-def verify_msg(msg_unpacked, auth_secret):
+def verify_msg(msg_unpacked, auth_secret: str):
     if not (isinstance(msg_unpacked, dict) and "arrpc.sign" in msg_unpacked and "data" in msg_unpacked):
         raise AuthException("Failed to authenticate message, signature not found")
 
