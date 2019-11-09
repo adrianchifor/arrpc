@@ -1,2 +1,2 @@
-msgpack>=0.6.1
+msgpack>=0.6.2
 gevent>=1.4.0
