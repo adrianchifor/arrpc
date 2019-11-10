@@ -1,4 +1,5 @@
 import logging
+import time
 
 from msgpack import packb, unpackb
 from gevent.server import StreamServer
@@ -6,13 +7,14 @@ from gevent import ssl
 
 from arrpc.error import AuthException
 from arrpc.utils import recvall, sign_and_wrap_msg, verify_msg
+from arrpc.metrics import server_metric_summary, hostname, k8s_namespace, start_metrics_server
 from arrpc import logger
 
 
 class Server(object):
     def __init__(self, host: str, port: int, handler, debug: bool = False,
-                 tls_certfile: str = None, tls_keyfile: str = None,
-                 auth_secret: str = None):
+                 tls_certfile: str = None, tls_keyfile: str = None, auth_secret: str = None,
+                 metrics: bool = False, metrics_port: int = 9095):
         self.host = host
         self.port = port
         self.handler = handler
@@ -24,8 +26,21 @@ class Server(object):
         if debug:
             logger.setLevel(logging.DEBUG)
 
+        self.metrics = metrics
+        self.metrics_port = metrics_port
+        self.arrpc_server_metric = None
+        self.hostname_label = None
+        self.namespace_label = None
+        if metrics:
+            self.arrpc_server_metric = server_metric_summary()
+            self.hostname_label = hostname()
+            self.namespace_label = k8s_namespace()
+
     def start(self):
         def _gevent_handler(socket, address):
+            if self.metrics:
+                start_time = time.time()
+
             logger.debug(f"Connection from {address}")
             msg = recvall(socket)
             try:
@@ -54,6 +69,19 @@ class Server(object):
                     logger.debug(f"Sent response back to {address}")
                 except Exception as e:
                     logger.error(f"Failed to send response back to {address}: {e}")
+
+            if self.metrics:
+                self.arrpc_server_metric.labels(
+                    self.hostname_label,           # hostname
+                    self.namespace_label,          # k8s_namespace
+                    address[0],                    # remote_address
+                    self.handler.__name__,         # handler_func
+                    self.auth_secret is not None,  # signed_payload
+                    self.ssl_context is not None   # tls
+                ).observe(time.time() - start_time)
+
+        if self.metrics:
+            start_metrics_server(self.metrics_port)
 
         if self.ssl_context:
             server = StreamServer((self.host, self.port), _gevent_handler,

@@ -11,9 +11,7 @@ Features:
 - TCP over TLS
 - Message authentication and authorization
 - Retries and timeouts
-- Telemetry (coming soon)
-- Tracing (coming soon)
-- Automatic mTLS on Kubernetes (coming soon)
+- Prometheus metrics
 
 ## Install
 ```
@@ -78,14 +76,12 @@ This feature can be used together with TCP over TLS to achieve a highly secure s
 
 #### Server
 ```python
-server = arrpc.Server("127.0.0.1", 8080, handler,
-                      auth_secret="<high entropy string>")
+server = arrpc.Server(..., auth_secret="<high entropy string>")
 ```
 
 #### Client
 ```python
-client = arrpc.Client("127.0.0.1", 8080,
-                      auth_secret="<same high entropy string>")
+client = arrpc.Client(..., auth_secret="<same high entropy string>")
 ```
 
 ### Retries and timeout
@@ -93,27 +89,47 @@ Currently `arrpc.Client().send()` will retry TCP connections 5 times (`con_max_r
 #### Client
 ```python
 # e.g. 3 retries with 5s timeout on send/receive
-client = arrpc.Client("127.0.0.1", 8080, timeout=5,
-                      con_max_retries=3)
+client = arrpc.Client(..., timeout=5, con_max_retries=3)
 ```
 
-### Debug
+### Prometheus metrics
+Both the server and client can expose the following metrics:
+```
+arrpc_[server/client]_req_seconds_count  - Total number of requests
+arrpc_[server/client]_req_seconds_sum    - Total seconds spent on requests
+```
+
+Prometheus's `rate` function allows calculation of both req/s and latency over time from these 2 metrics.
+
+The metrics support the following labels:
+```
+hostname               - Value of /etc/hostname, pod name on Kubernetes
+k8s_namespace          - The Kubernetes namespace where the pod runs (empty otherwise)
+remote_address         - The address receiving requests from or sending requests to
+(server) handler_func  - Name of the server request handler function
+signed_payload         - True if the payload for the request was signed and verified
+tls                    - True if the request was made over TLS
+```
 #### Server
 ```python
-server = arrpc.Server("127.0.0.1", 8080, handler, debug=True)
+server = arrpc.Server(..., metrics=True)
 ```
 
 #### Client
 ```python
-client = arrpc.Client("127.0.0.1", 8080, debug=True)
+client = arrpc.Client(..., metrics=True)
 ```
 
-### Telemetry (coming soon)
+Default metrics port is `9095` so you can see the exposed Prometheus metrics by going to `http://HOST:9095/metrics`. You can change the port by defining `metrics_port` in the server/client args.
 
-[Prometheus](https://github.com/prometheus/client_python)
 
-### Tracing (coming soon)
+### Debug logs
+#### Server
+```python
+server = arrpc.Server(..., debug=True)
+```
 
-[OpenTracing](https://github.com/opentracing/opentracing-python)
-
-### Automatic mTLS on Kubernetes (coming soon)
+#### Client
+```python
+client = arrpc.Client(..., debug=True)
+```

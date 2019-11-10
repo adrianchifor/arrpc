@@ -6,13 +6,15 @@ from gevent import ssl, socket as gsocket
 
 from arrpc.error import ConnectException, AuthException
 from arrpc.utils import recvall, sign_and_wrap_msg, verify_msg
+from arrpc.metrics import metrics_mutex, client_metrics, client_metric_summary, hostname, k8s_namespace
+from arrpc.metrics import start_metrics_server
 from arrpc import logger
 
 
 class Client(object):
     def __init__(self, host: str, port: int, timeout: int = None, con_max_retries: int = 5,
                  debug: bool = False, tls_cafile: str = None, tls_self_signed: bool = False,
-                 auth_secret: str = None):
+                 auth_secret: str = None, metrics: bool = False, metrics_port: int = 9095):
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -27,14 +29,38 @@ class Client(object):
         if debug:
             logger.setLevel(logging.DEBUG)
 
+        self.metrics = metrics
+        if metrics:
+            with metrics_mutex:
+                if not client_metrics["arrpc_client_metric"]:
+                    client_metrics["arrpc_client_metric"] = client_metric_summary()
+                    client_metrics["hostname_label"] = hostname()
+                    client_metrics["namespace_label"] = k8s_namespace()
+            start_metrics_server(metrics_port)
+
     def send(self, msg):
         with self._socket_connect() as socket:
+            if self.metrics:
+                start_time = time.time()
+
+            response = None
             if self.ssl_context:
                 with self.ssl_context.wrap_socket(socket, server_hostname=self.host) as ssocket:
                     logger.debug(f"Connected to {self.host}:{self.port} over {ssocket.version()}")
-                    return self._handle_send(ssocket, msg)
+                    response = self._handle_send(ssocket, msg)
             else:
-                return self._handle_send(socket, msg)
+                response = self._handle_send(socket, msg)
+
+            if self.metrics:
+                client_metrics["arrpc_client_metric"].labels(
+                    client_metrics["hostname_label"],   # hostname
+                    client_metrics["namespace_label"],  # k8s_namespace
+                    f"{self.host}:{self.port}",         # remote_address
+                    self.auth_secret is not None,       # signed_payload
+                    self.ssl_context is not None        # tls
+                ).observe(time.time() - start_time)
+
+            return response
 
     def _handle_send(self, socket, msg):
         msg_packed = packb(msg, use_bin_type=True)
