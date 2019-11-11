@@ -8,24 +8,33 @@ metrics_mutex = Lock()
 metrics_server_started = False
 # We need this here because we share metrics across multiple clients
 client_metrics = {
-    "arrpc_client_metric": None,
+    "arrpc_client_metric_seconds": None,
+    "arrpc_client_metric_bytes": None,
     "hostname_label": "",
     "namespace_label": ""
 }
 
 
-def server_metric_summary():
+def server_metrics_summary():
     return Summary(
         "arrpc_server_req_seconds",
         "Time spent handling server requests",
         ("hostname", "k8s_namespace", "remote_address", "handler_func", "signed_payload", "tls")
+    ), Summary(
+        "arrpc_server_req_bytes",
+        "Size of server requests in bytes",
+        ("hostname", "k8s_namespace", "remote_address", "handler_func", "signed_payload", "tls")
     )
 
 
-def client_metric_summary():
+def client_metrics_summary():
     return Summary(
         "arrpc_client_req_seconds",
         "Time spent making client requests",
+        ("hostname", "k8s_namespace", "remote_address", "signed_payload", "tls")
+    ), Summary(
+        "arrpc_client_req_bytes",
+        "Size of client requests in bytes",
         ("hostname", "k8s_namespace", "remote_address", "signed_payload", "tls")
     )
 

@@ -97,9 +97,10 @@ Both the server and client can expose the following metrics:
 ```
 arrpc_[server/client]_req_seconds_count  - Total number of requests
 arrpc_[server/client]_req_seconds_sum    - Total seconds spent on requests
+arrpc_[server/client]_req_bytes_sum      - Total bytes in requests
 ```
 
-Prometheus's `rate` function allows calculation of both req/s and latency over time from these 2 metrics.
+Prometheus's `rate` function allows calculation of requests, bytes and latency over time from these 3 metrics.
 
 The metrics support the following labels:
 ```

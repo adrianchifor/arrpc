@@ -7,7 +7,7 @@ from gevent import ssl
 
 from arrpc.error import AuthException
 from arrpc.utils import recvall, sign_and_wrap_msg, verify_msg
-from arrpc.metrics import server_metric_summary, hostname, k8s_namespace, start_metrics_server
+from arrpc.metrics import server_metrics_summary, hostname, k8s_namespace, start_metrics_server
 from arrpc import logger
 
 
@@ -28,11 +28,12 @@ class Server(object):
 
         self.metrics = metrics
         self.metrics_port = metrics_port
-        self.arrpc_server_metric = None
+        self.arrpc_server_metric_seconds = None
+        self.arrpc_server_metric_bytes = None
         self.hostname_label = None
         self.namespace_label = None
         if metrics:
-            self.arrpc_server_metric = server_metric_summary()
+            self.arrpc_server_metric_seconds, self.arrpc_server_metric_bytes = server_metrics_summary()
             self.hostname_label = hostname()
             self.namespace_label = k8s_namespace()
 
@@ -71,7 +72,7 @@ class Server(object):
                     logger.error(f"Failed to send response back to {address}: {e}")
 
             if self.metrics:
-                self.arrpc_server_metric.labels(
+                self.arrpc_server_metric_seconds.labels(
                     self.hostname_label,           # hostname
                     self.namespace_label,          # k8s_namespace
                     address[0],                    # remote_address
@@ -79,6 +80,15 @@ class Server(object):
                     self.auth_secret is not None,  # signed_payload
                     self.ssl_context is not None   # tls
                 ).observe(time.time() - start_time)
+
+                self.arrpc_server_metric_bytes.labels(
+                    self.hostname_label,           # hostname
+                    self.namespace_label,          # k8s_namespace
+                    address[0],                    # remote_address
+                    self.handler.__name__,         # handler_func
+                    self.auth_secret is not None,  # signed_payload
+                    self.ssl_context is not None   # tls
+                ).observe(len(msg))
 
         if self.metrics:
             start_metrics_server(self.metrics_port)
