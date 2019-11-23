@@ -1,6 +1,7 @@
 import logging
 import time
 import ssl
+import threading
 
 from msgpack import packb, unpackb
 from gevent.server import StreamServer
@@ -37,7 +38,7 @@ class Server(object):
             self.hostname_label = hostname()
             self.namespace_label = k8s_namespace()
 
-    def start(self):
+    def start(self, background: bool = False):
         def _gevent_handler(socket, address):
             if self.metrics:
                 start_time = time.time()
@@ -100,4 +101,10 @@ class Server(object):
         else:
             server = StreamServer((self.host, self.port), _gevent_handler)
             logger.info(f"Listening on TCP {self.host}:{self.port}\n")
-        server.serve_forever()
+
+        if background:
+            t = threading.Thread(target=server.serve_forever)
+            t.setDaemon(True)
+            t.start()
+        else:
+            server.serve_forever()

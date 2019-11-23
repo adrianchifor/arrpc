@@ -1,7 +1,7 @@
 # arrpc
-Simple, speedy and light Python RPC using [MessagePack](https://msgpack.org/) for object serialization and [gevent](http://www.gevent.org/) for networking.
+Simple, speedy and light Python3 RPC using [MessagePack](https://msgpack.org/) for object serialization and [gevent](http://www.gevent.org/) for networking.
 
-Great choice if you a need a quick, easy and secure RPC setup or you think an HTTP framework or GRPC is too complex/overkill for sending messages between a few services.
+Great choice if you a need a quick, easy and secure RPC setup or you think an HTTP framework or GRPC is too complex for sending messages between two services.
 
 As [MessagePack](https://msgpack.org/) is cross-platform, you can open TCP connections and send MessagePack-encoded messages from any supported language to the Python `arrpc.Server()`. Same goes for the `arrpc.Client()` as long as you have a TCP server listening and understanding MessagePack.
 
@@ -32,6 +32,11 @@ def handler(message):
 
 server = arrpc.Server("127.0.0.1", 8080, handler)
 server.start()
+```
+
+You can also run the server in the background (non-blocking):
+```python
+server.start(background=True)
 ```
 
 #### Client
