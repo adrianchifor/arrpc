@@ -1,9 +1,9 @@
 import logging
 import time
+import ssl
 
 from msgpack import packb, unpackb
 from gevent.server import StreamServer
-from gevent import ssl
 
 from arrpc.error import AuthException
 from arrpc.utils import recvall, sign_and_wrap_msg, verify_msg

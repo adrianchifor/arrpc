@@ -1,8 +1,9 @@
 import logging
 import time
+import ssl
+import socket
 
 from msgpack import packb, unpackb
-from gevent import ssl, socket as gsocket
 
 from arrpc.error import ConnectException, AuthException
 from arrpc.utils import recvall, sign_and_wrap_msg, verify_msg
@@ -39,15 +40,15 @@ class Client(object):
             start_metrics_server(metrics_port)
 
     def send(self, msg):
-        with self._socket_connect() as socket:
+        with self._socket_connect() as sock:
             if self.ssl_context:
-                with self.ssl_context.wrap_socket(socket, server_hostname=self.host) as ssocket:
-                    logger.debug(f"Connected to {self.host}:{self.port} over {ssocket.version()}")
-                    return self._handle_send(ssocket, msg)
+                with self.ssl_context.wrap_socket(sock, server_hostname=self.host) as ssock:
+                    logger.debug(f"Connected to {self.host}:{self.port} over {ssock.version()}")
+                    return self._handle_send(ssock, msg)
             else:
-                return self._handle_send(socket, msg)
+                return self._handle_send(sock, msg)
 
-    def _handle_send(self, socket, msg):
+    def _handle_send(self, sock, msg):
         if self.metrics:
             start_time = time.time()
 
@@ -55,10 +56,10 @@ class Client(object):
         if self.auth_secret:
             msg_packed = sign_and_wrap_msg(msg_packed, self.auth_secret)
 
-        socket.sendall(msg_packed)
+        sock.sendall(msg_packed)
         logger.debug(f"Sent message to {self.host}:{self.port}")
         # Wait for response
-        response = recvall(socket)
+        response = recvall(sock)
         try:
             response_unpacked = unpackb(response, raw=False)
         except Exception as e:
@@ -101,9 +102,9 @@ class Client(object):
         while attempt <= self.con_max_retries:
             try:
                 if self.timeout:
-                    return gsocket.create_connection((self.host, self.port), self.timeout)
+                    return socket.create_connection((self.host, self.port), self.timeout)
                 else:
-                    return gsocket.create_connection((self.host, self.port))
+                    return socket.create_connection((self.host, self.port))
             except Exception as e:
                 logger.debug(f"Failed to connect to {self.host}:{self.port} on attempt {attempt}: {e}")
                 if attempt == self.con_max_retries:
