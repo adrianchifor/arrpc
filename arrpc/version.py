@@ -1,7 +1,7 @@
 title = 'arrpc'
 description = 'Simple, speedy and light Python RPC'
 url = 'https://github.com/adrianchifor/arrpc'
-version = '0.2.0'
+version = '0.2.1'
 author = 'Adrian Chifor'
 author_email = 'me@adrianchifor.com'
 license = 'Apache License 2.0'
