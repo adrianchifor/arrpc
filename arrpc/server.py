@@ -40,56 +40,70 @@ class Server(object):
 
     def start(self, background: bool = False):
         def _gevent_handler(socket, address):
-            if self.metrics:
-                start_time = time.time()
-
             logger.debug(f"Connection from {address}")
-            msg = recvall(socket)
-            try:
-                msg_unpacked = unpackb(msg, raw=False)
-            except Exception as e:
-                logger.debug(f"Failed to unpack message, most likely not MessagePack: {e}")
-                msg_unpacked = None
-
-            if msg_unpacked:
-                logger.debug(f"Received message from {address}")
-                if self.auth_secret:
-                    try:
-                        msg_unpacked = verify_msg(msg_unpacked, self.auth_secret)
-                        logger.debug(f"Verified message signature")
-                    except AuthException as e:
-                        logger.error(e)
-                        return
-
-                logger.debug(f"Passing message to handler function")
-                response = self.handler(msg_unpacked)
-                response_packed = packb(response, use_bin_type=True)
-                if self.auth_secret:
-                    response_packed = sign_and_wrap_msg(response_packed, self.auth_secret)
+            while True:
+                msg = None
                 try:
-                    socket.sendall(response_packed)
-                    logger.debug(f"Sent response back to {address}")
+                    msg = recvall(socket)
+                except ConnectionResetError:
+                    pass
+                if not msg:
+                    logger.debug(f"Connection from {address} closed")
+                    break
+
+                if self.metrics:
+                    start_time = time.time()
+
+                try:
+                    msg_unpacked = unpackb(msg, raw=False)
                 except Exception as e:
-                    logger.error(f"Failed to send response back to {address}: {e}")
+                    logger.debug(f"Failed to unpack message, most likely not MessagePack: {e}")
+                    msg_unpacked = None
 
-            if self.metrics:
-                self.arrpc_server_metric_seconds.labels(
-                    self.hostname_label,           # hostname
-                    self.namespace_label,          # k8s_namespace
-                    address[0],                    # remote_address
-                    self.handler.__name__,         # handler_func
-                    self.auth_secret is not None,  # signed_payload
-                    self.ssl_context is not None   # tls
-                ).observe(time.time() - start_time)
+                if msg_unpacked:
+                    logger.debug(f"Received message from {address}")
+                    auth_invalid_sig = False
+                    if self.auth_secret:
+                        try:
+                            msg_unpacked = verify_msg(msg_unpacked, self.auth_secret)
+                            logger.debug(f"Verified message signature")
+                        except AuthException as e:
+                            logger.error(e)
+                            auth_invalid_sig = True
 
-                self.arrpc_server_metric_bytes.labels(
-                    self.hostname_label,           # hostname
-                    self.namespace_label,          # k8s_namespace
-                    address[0],                    # remote_address
-                    self.handler.__name__,         # handler_func
-                    self.auth_secret is not None,  # signed_payload
-                    self.ssl_context is not None   # tls
-                ).observe(len(msg))
+                    if auth_invalid_sig:
+                        response = "Invalid message signature"
+                    else:
+                        logger.debug(f"Passing message to handler function")
+                        response = self.handler(msg_unpacked)
+                    response_packed = packb(response, use_bin_type=True)
+                    if self.auth_secret:
+                        response_packed = sign_and_wrap_msg(response_packed, self.auth_secret)
+                    try:
+                        socket.sendall(response_packed)
+                        logger.debug(f"Sent response back to {address}")
+                    except Exception as e:
+                        logger.error(f"Failed to send response back to {address}: {e}")
+                        break
+
+                if self.metrics:
+                    self.arrpc_server_metric_seconds.labels(
+                        self.hostname_label,           # hostname
+                        self.namespace_label,          # k8s_namespace
+                        address[0],                    # remote_address
+                        self.handler.__name__,         # handler_func
+                        self.auth_secret is not None,  # signed_payload
+                        self.ssl_context is not None   # tls
+                    ).observe(time.time() - start_time)
+
+                    self.arrpc_server_metric_bytes.labels(
+                        self.hostname_label,           # hostname
+                        self.namespace_label,          # k8s_namespace
+                        address[0],                    # remote_address
+                        self.handler.__name__,         # handler_func
+                        self.auth_secret is not None,  # signed_payload
+                        self.ssl_context is not None   # tls
+                    ).observe(len(msg))
 
         if self.metrics:
             start_metrics_server(self.metrics_port)

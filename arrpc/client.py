@@ -39,14 +39,20 @@ class Client(object):
                     cm["namespace_label"] = k8s_namespace()
             start_metrics_server(metrics_port)
 
+        self.socket = self._socket_connect()
+
     def send(self, msg):
-        with self._socket_connect() as sock:
+        try:
             if self.ssl_context:
-                with self.ssl_context.wrap_socket(sock, server_hostname=self.host) as ssock:
+                with self.ssl_context.wrap_socket(self.socket, server_hostname=self.host) as ssock:
                     logger.debug(f"Connected to {self.host}:{self.port} over {ssock.version()}")
                     return self._handle_send(ssock, msg)
             else:
-                return self._handle_send(sock, msg)
+                return self._handle_send(self.socket, msg)
+        except (BrokenPipeError, ConnectionResetError):
+            logger.debug(f"Socket disconnected, reconnecting to {self.host}:{self.port}")
+            self.socket = self._socket_connect()
+            return self.send(msg)
 
     def _handle_send(self, sock, msg):
         if self.metrics:

@@ -3,15 +3,21 @@ Simple, speedy and light Python3 RPC using [MessagePack](https://msgpack.org/) f
 
 Great choice if you a need a quick, easy and secure RPC setup or you think an HTTP framework or GRPC is too complex for sending messages between two services.
 
-As [MessagePack](https://msgpack.org/) is cross-platform, you can open TCP connections and send MessagePack-encoded messages from any supported language to the Python `arrpc.Server()`. Same goes for the `arrpc.Client()` as long as you have a TCP server listening and understanding MessagePack.
+As [MessagePack](https://msgpack.org/) is cross-platform, you can open TCP connections and send MessagePack-encoded messages from any supported language to the `arrpc.Server()`. Same goes for the `arrpc.Client()` as long as you have a TCP server listening and understanding MessagePack.
 
 Features:
 - Efficient serialization of messages with [MessagePack](https://msgpack.org/)
 - Fast and parallel handling of messages with [gevent](http://www.gevent.org/)
 - TCP over TLS
-- Message authentication and authorization
+- Message authentication
 - Retries and timeouts
 - Prometheus metrics
+
+Benchmarks (using n1-standard-1 VM on GCP):
+- Raw client and server ~ 9000 qps
+  - with TCP/TLS ~ 8700 qps
+  - with TCP/TLS + msg authentication ~ 7400 qps
+  - with TCP/TLS + msg authentication + Prometheus metrics ~ 7100 qps
 
 ## Install
 ```
@@ -70,7 +76,7 @@ client = arrpc.Client("127.0.0.1", 8443,
                       tls_self_signed=True)
 ```
 
-### Message authentication and authorization
+### Message authentication
 Signs messages between server and clients with HMAC-SHA256 using a shared secret in order to prevent message tampering and to ensure only correctly signed messages reach the handler.
 
 **Before**: Object on client -> MessagePack encode -> binary over TCP (/TLS?) -> MessagePack decode -> Object on server
