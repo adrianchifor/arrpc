@@ -5,8 +5,8 @@ import socket
 
 from msgpack import packb, unpackb
 
-from arrpc.error import ConnectException, AuthException
-from arrpc.utils import recvall, sign_and_wrap_msg, verify_msg
+from arrpc.error import ConnectException, AuthException, RpcException
+from arrpc.utils import recvall, sign_and_wrap_msg, verify_msg, parse_response
 from arrpc.metrics import metrics_mutex, client_metrics as cm, client_metrics_summary, hostname, k8s_namespace
 from arrpc.metrics import start_metrics_server
 from arrpc import logger
@@ -39,7 +39,7 @@ class Client(object):
                     cm["namespace_label"] = k8s_namespace()
             start_metrics_server(metrics_port)
 
-        self.socket = self._socket_connect()
+        self.socket = None
 
     def send(self, msg):
         try:
@@ -49,8 +49,8 @@ class Client(object):
                     return self._handle_send(ssock, msg)
             else:
                 return self._handle_send(self.socket, msg)
-        except (BrokenPipeError, ConnectionResetError):
-            logger.debug(f"Socket disconnected, reconnecting to {self.host}:{self.port}")
+        except (BrokenPipeError, ConnectionResetError, AttributeError):
+            logger.debug(f"Socket disconnected or not initialized yet, connecting to {self.host}:{self.port}")
             self.socket = self._socket_connect()
             return self.send(msg)
 
@@ -62,10 +62,15 @@ class Client(object):
         if self.auth_secret:
             msg_packed = sign_and_wrap_msg(msg_packed, self.auth_secret)
 
-        sock.sendall(msg_packed)
-        logger.debug(f"Sent message to {self.host}:{self.port}")
-        # Wait for response
-        response = recvall(sock)
+        try:
+            sock.sendall(msg_packed)
+            logger.debug(f"Sent message to {self.host}:{self.port}")
+            # Wait for response
+            response = recvall(sock)
+        except socket.timeout:
+            # TODO: increment error metric
+            raise RpcException(f"Timed out waiting for {self.host}:{self.port}")
+
         try:
             response_unpacked = unpackb(response, raw=False)
         except Exception as e:
@@ -74,13 +79,6 @@ class Client(object):
 
         if response_unpacked:
             logger.debug(f"Got response from {self.host}:{self.port}")
-            if self.auth_secret:
-                try:
-                    response_unpacked = verify_msg(response_unpacked, self.auth_secret)
-                    logger.debug(f"Verified message signature")
-                except AuthException as e:
-                    logger.error(e)
-                    return None
 
             if self.metrics:
                 cm["arrpc_client_metric_seconds"].labels(
@@ -99,6 +97,11 @@ class Client(object):
                     self.ssl_context is not None   # tls
                 ).observe(len(msg_packed))
 
+            try:
+                response_unpacked = parse_response(response_unpacked)
+            except Exception:
+                # TODO: increment error metric
+                raise
             return response_unpacked
 
     def _socket_connect(self):

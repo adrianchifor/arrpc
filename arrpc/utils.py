@@ -33,3 +33,10 @@ def verify_msg(msg_unpacked, auth_secret: str):
         return unpackb(data, raw=False)
     else:
         raise AuthException("Failed to authenticate message, signature is incorrect")
+
+
+def parse_response(response):
+    if response and "arrpc.error.AuthException" in response:
+        raise AuthException(response.replace("arrpc.error.AuthException: ", ""))
+
+    return response

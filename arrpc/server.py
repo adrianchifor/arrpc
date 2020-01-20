@@ -62,23 +62,21 @@ class Server(object):
 
                 if msg_unpacked:
                     logger.debug(f"Received message from {address}")
-                    auth_invalid_sig = False
+                    response = None
                     if self.auth_secret:
                         try:
                             msg_unpacked = verify_msg(msg_unpacked, self.auth_secret)
                             logger.debug(f"Verified message signature")
                         except AuthException as e:
                             logger.error(e)
-                            auth_invalid_sig = True
+                            response = ("arrpc.error.AuthException: "
+                                "Invalid or missing message signature, make sure 'auth_secret' is set/correct")
 
-                    if auth_invalid_sig:
-                        response = "Invalid message signature"
-                    else:
+                    if not response:
                         logger.debug(f"Passing message to handler function")
+                        # TODO: handle RpcException propagation
                         response = self.handler(msg_unpacked)
                     response_packed = packb(response, use_bin_type=True)
-                    if self.auth_secret:
-                        response_packed = sign_and_wrap_msg(response_packed, self.auth_secret)
                     try:
                         socket.sendall(response_packed)
                         logger.debug(f"Sent response back to {address}")

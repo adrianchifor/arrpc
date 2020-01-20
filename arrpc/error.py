@@ -4,3 +4,7 @@ class ConnectException(Exception):
 
 class AuthException(Exception):
     pass
+
+
+class RpcException(Exception):
+    pass
