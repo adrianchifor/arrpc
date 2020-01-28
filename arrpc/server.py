@@ -102,7 +102,6 @@ class Server(object):
 
                     if not response:
                         logger.debug(f"Passing message to handler function")
-                        # TODO: handle RpcException propagation
                         try:
                             response = self.handler(msg_unpacked)
                         except RpcException as e:
@@ -117,6 +116,7 @@ class Server(object):
                                     str(e)                         # reason
                                 ).inc()
                             response = f"arrpc.error.RpcException: {e}"
+
                     response_packed = packb(response, use_bin_type=True)
                     try:
                         socket.sendall(response_packed)
