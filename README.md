@@ -12,6 +12,7 @@ Features:
 - Message authentication
 - Retries and timeouts
 - Prometheus metrics
+- Exception propagation
 
 Benchmarks (using n1-standard-1 VM on GCP):
 - Raw client and server ~ 9000 qps
