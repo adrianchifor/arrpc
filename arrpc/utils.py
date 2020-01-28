@@ -3,7 +3,7 @@ import hashlib
 
 from msgpack import packb, unpackb
 
-from arrpc.error import AuthException
+from arrpc.error import AuthException, RpcException
 
 
 def recvall(socket, buffer_size: int = 4096):
@@ -38,5 +38,8 @@ def verify_msg(msg_unpacked, auth_secret: str):
 def parse_response(response):
     if response and "arrpc.error.AuthException" in response:
         raise AuthException(response.replace("arrpc.error.AuthException: ", ""))
+
+    if response and "arrpc.error.RpcException" in response:
+        raise RpcException(response.replace("arrpc.error.RpcException: ", ""))
 
     return response

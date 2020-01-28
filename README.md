@@ -109,18 +109,20 @@ Both the server and client can expose the following metrics:
 arrpc_[server/client]_req_seconds_count  - Total number of requests
 arrpc_[server/client]_req_seconds_sum    - Total seconds spent on requests
 arrpc_[server/client]_req_bytes_sum      - Total bytes in requests
+arrpc_[server/client]_errors_total       - Total number of errors
 ```
 
-Prometheus's `rate` function allows calculation of requests, bytes and latency over time from these 3 metrics.
+Prometheus's `rate` function allows calculation of requests, bytes and latency over time from the top 3 metrics.
 
 The metrics support the following labels:
 ```
-hostname               - Value of /etc/hostname, pod name on Kubernetes
-k8s_namespace          - The Kubernetes namespace where the pod runs (empty otherwise)
-remote_address         - The address receiving requests from or sending requests to
-(server) handler_func  - Name of the server request handler function
-signed_payload         - True if the payload for the request was signed and verified
-tls                    - True if the request was made over TLS
+hostname                    - Value of /etc/hostname, pod name on Kubernetes
+k8s_namespace               - The Kubernetes namespace where the pod runs (empty otherwise)
+remote_address              - The address receiving requests from or sending requests to
+(server-only) handler_func  - Name of the server request handler function
+signed_payload              - True if the payload for the request was signed and verified
+tls                         - True if the request was made over TLS
+(errors-only) reason        - The error message
 ```
 #### Server
 ```python
@@ -173,16 +175,43 @@ except arrpc.error.AuthException as e:
     # Handle 'auth_secret' mismatch
 ```
 
-#### RpcException
-RPC failure. Raised natively by a timeout on `send()` or can also be raised manually in the server handler and it will be propagated to the client.
+#### RpcTimeoutException
+RPC timeout error, raised on `send()`.
 ```python
 import arrpc
 
-client = arrpc.Client("127.0.0.1", 8080, timeout=3)
+client = arrpc.Client("127.0.0.1", 8080, timeout=0.1)
+try:
+    response = client.send({"foo": "bar"})
+    # Handle response
+except arrpc.error.RpcTimeoutException as e:
+    # Handle send() timeout
+```
+
+#### RpcException
+Custom RPC error, can be raised manually in the server handler and it will be propagated to the client.
+
+##### Server
+```python
+import arrpc
+from arrpc.error import RpcException
+
+def handler(message):
+    # Do stuff
+    raise RpcException("Something went wrong")
+
+server = arrpc.Server("127.0.0.1", 8080, handler)
+server.start()
+```
+
+##### Client
+```python
+import arrpc
+
+client = arrpc.Client("127.0.0.1", 8080)
 try:
     response = client.send({"foo": "bar"})
     # Handle response
 except arrpc.error.RpcException as e:
-    # Check and handle exception message
-    # Could be timeout or custom error from server handler
+    print(e)  # Will print "Something went wrong"
 ```

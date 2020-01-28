@@ -1,5 +1,5 @@
 title = 'arrpc'
-description = 'Simple, speedy and light Python RPC'
+description = 'Simple, speedy and light Python3 RPC'
 url = 'https://github.com/adrianchifor/arrpc'
 version = '0.3.0'
 author = 'Adrian Chifor'
