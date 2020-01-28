@@ -10,4 +10,3 @@ monkey.patch_all()
 
 from arrpc.server import Server
 from arrpc.client import Client
-from arrpc.error import ConnectException, AuthException

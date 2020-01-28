@@ -4,16 +4,16 @@ import ssl
 import socket
 
 from msgpack import packb, unpackb
+from prometheus_client import Summary, Counter
 
-from arrpc.error import ConnectException, AuthException
-from arrpc.utils import recvall, sign_and_wrap_msg, verify_msg
-from arrpc.metrics import metrics_mutex, client_metrics as cm, client_metrics_summary, hostname, k8s_namespace
-from arrpc.metrics import start_metrics_server
+import arrpc.metrics as m
+from arrpc.error import ConnectException, RpcTimeoutException
+from arrpc.utils import recvall, sign_and_wrap_msg, parse_response
 from arrpc import logger
 
 
 class Client(object):
-    def __init__(self, host: str, port: int, timeout: int = None, con_max_retries: int = 5,
+    def __init__(self, host: str, port: int, timeout: float = None, con_max_retries: int = 5,
                  debug: bool = False, tls_cafile: str = None, tls_self_signed: bool = False,
                  auth_secret: str = None, metrics: bool = False, metrics_port: int = 9095):
         self.host = host
@@ -29,17 +29,36 @@ class Client(object):
                 self.ssl_context.verify_mode = ssl.CERT_NONE
         if debug:
             logger.setLevel(logging.DEBUG)
+        self.socket = None
 
         self.metrics = metrics
         if metrics:
-            with metrics_mutex:
-                if not cm["arrpc_client_metric_seconds"] and not cm["arrpc_client_metric_bytes"]:
-                    cm["arrpc_client_metric_seconds"], cm["arrpc_client_metric_bytes"] = client_metrics_summary()
-                    cm["hostname_label"] = hostname()
-                    cm["namespace_label"] = k8s_namespace()
-            start_metrics_server(metrics_port)
+            with m.metrics_mutex:
+                if not m.shared_hostname_label:
+                    m.shared_hostname_label = m.hostname()
+                if not m.shared_namespace_label:
+                    m.shared_namespace_label = m.k8s_namespace()
 
-        self.socket = self._socket_connect()
+                if not m.shared_metrics["arrpc_client_metric_seconds"]:
+                    m.shared_metrics["arrpc_client_metric_seconds"] = Summary(
+                        "arrpc_client_req_seconds",
+                        "Time spent making client requests",
+                        ("hostname", "k8s_namespace", "remote_address", "signed_payload", "tls")
+                    )
+                if not m.shared_metrics["arrpc_client_metric_bytes"]:
+                    m.shared_metrics["arrpc_client_metric_bytes"] = Summary(
+                        "arrpc_client_req_bytes",
+                        "Size of client requests in bytes",
+                        ("hostname", "k8s_namespace", "remote_address", "signed_payload", "tls")
+                    )
+                if not m.shared_metrics["arrpc_client_metric_errors"]:
+                    m.shared_metrics["arrpc_client_metric_errors"] = Counter(
+                        "arrpc_client_errors",
+                        "RPC client errors",
+                        ("hostname", "k8s_namespace", "remote_address", "signed_payload", "tls", "reason")
+                    )
+
+            m.start_metrics_server(metrics_port)
 
     def send(self, msg):
         try:
@@ -49,8 +68,8 @@ class Client(object):
                     return self._handle_send(ssock, msg)
             else:
                 return self._handle_send(self.socket, msg)
-        except (BrokenPipeError, ConnectionResetError):
-            logger.debug(f"Socket disconnected, reconnecting to {self.host}:{self.port}")
+        except (BrokenPipeError, ConnectionResetError, AttributeError):
+            logger.debug(f"Socket disconnected or not initialized yet, connecting to {self.host}:{self.port}")
             self.socket = self._socket_connect()
             return self.send(msg)
 
@@ -62,10 +81,23 @@ class Client(object):
         if self.auth_secret:
             msg_packed = sign_and_wrap_msg(msg_packed, self.auth_secret)
 
-        sock.sendall(msg_packed)
-        logger.debug(f"Sent message to {self.host}:{self.port}")
-        # Wait for response
-        response = recvall(sock)
+        try:
+            sock.sendall(msg_packed)
+            logger.debug(f"Sent message to {self.host}:{self.port}")
+            response = recvall(sock)
+        except socket.timeout:
+            error_msg = "Timed out"
+            if self.metrics:
+                m.shared_metrics["arrpc_client_metric_errors"].labels(
+                    m.shared_hostname_label,       # hostname
+                    m.shared_namespace_label,      # k8s_namespace
+                    f"{self.host}:{self.port}",    # remote_address
+                    self.auth_secret is not None,  # signed_payload
+                    self.ssl_context is not None,  # tls
+                    error_msg                      # reason
+                ).inc()
+            raise RpcTimeoutException(error_msg)
+
         try:
             response_unpacked = unpackb(response, raw=False)
         except Exception as e:
@@ -74,30 +106,37 @@ class Client(object):
 
         if response_unpacked:
             logger.debug(f"Got response from {self.host}:{self.port}")
-            if self.auth_secret:
-                try:
-                    response_unpacked = verify_msg(response_unpacked, self.auth_secret)
-                    logger.debug(f"Verified message signature")
-                except AuthException as e:
-                    logger.error(e)
-                    return None
 
             if self.metrics:
-                cm["arrpc_client_metric_seconds"].labels(
-                    cm["hostname_label"],          # hostname
-                    cm["namespace_label"],         # k8s_namespace
+                m.shared_metrics["arrpc_client_metric_seconds"].labels(
+                    m.shared_hostname_label,       # hostname
+                    m.shared_namespace_label,      # k8s_namespace
                     f"{self.host}:{self.port}",    # remote_address
                     self.auth_secret is not None,  # signed_payload
                     self.ssl_context is not None   # tls
                 ).observe(time.time() - start_time)
 
-                cm["arrpc_client_metric_bytes"].labels(
-                    cm["hostname_label"],          # hostname
-                    cm["namespace_label"],         # k8s_namespace
+                m.shared_metrics["arrpc_client_metric_bytes"].labels(
+                    m.shared_hostname_label,       # hostname
+                    m.shared_namespace_label,      # k8s_namespace
                     f"{self.host}:{self.port}",    # remote_address
                     self.auth_secret is not None,  # signed_payload
                     self.ssl_context is not None   # tls
                 ).observe(len(msg_packed))
+
+            try:
+                response_unpacked = parse_response(response_unpacked)
+            except Exception as e:
+                if self.metrics:
+                    m.shared_metrics["arrpc_client_metric_errors"].labels(
+                        m.shared_hostname_label,       # hostname
+                        m.shared_namespace_label,      # k8s_namespace
+                        f"{self.host}:{self.port}",    # remote_address
+                        self.auth_secret is not None,  # signed_payload
+                        self.ssl_context is not None,  # tls
+                        str(e)                         # reason
+                    ).inc()
+                raise
 
             return response_unpacked
 
@@ -120,4 +159,14 @@ class Client(object):
                 retry_back_off_time += 1
                 attempt += 1
 
-        raise ConnectException(f"Failed to connect to {self.host}:{self.port} with {self.con_max_retries} attempts")
+        error_msg = f"Failed to connect to {self.host}:{self.port} with {self.con_max_retries} attempts"
+        if self.metrics:
+            m.shared_metrics["arrpc_client_metric_errors"].labels(
+                m.shared_hostname_label,       # hostname
+                m.shared_namespace_label,      # k8s_namespace
+                f"{self.host}:{self.port}",    # remote_address
+                self.auth_secret is not None,  # signed_payload
+                self.ssl_context is not None,  # tls
+                error_msg                      # reason
+            ).inc()
+        raise ConnectException(error_msg)
