@@ -36,10 +36,11 @@ def verify_msg(msg_unpacked, auth_secret: str):
 
 
 def parse_response(response):
-    if response and "arrpc.error.AuthException" in response:
-        raise AuthException(response.replace("arrpc.error.AuthException: ", ""))
+    if response and isinstance(response, str):
+        if "arrpc.error.AuthException" in response:
+            raise AuthException(response.replace("arrpc.error.AuthException: ", ""))
 
-    if response and "arrpc.error.RpcException" in response:
-        raise RpcException(response.replace("arrpc.error.RpcException: ", ""))
+        if "arrpc.error.RpcException" in response:
+            raise RpcException(response.replace("arrpc.error.RpcException: ", ""))
 
     return response
