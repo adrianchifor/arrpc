@@ -14,11 +14,11 @@ Features:
 - Prometheus metrics
 - Exception propagation
 
-Benchmarks (using n1-standard-1 VM on GCP):
-- Raw client and server ~ 9000 qps
-  - with TCP/TLS ~ 8700 qps
-  - with TCP/TLS + msg authentication ~ 7400 qps
-  - with TCP/TLS + msg authentication + Prometheus metrics ~ 7100 qps
+Benchmarks (using t2d-standard-1 VM on GCP):
+- Raw client and server ~ 40k qps
+  - with TCP/TLS ~ 37k qps
+  - with TCP/TLS + msg authentication ~ 30k qps
+  - with TCP/TLS + msg authentication + Prometheus metrics ~ 28k qps
 
 ## Install
 ```
